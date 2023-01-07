@@ -1,6 +1,9 @@
 import * as cheerio from 'cheerio'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+
+const DB_PATH = path.join(process.cwd(), './db')
+const TEAMS = await readFile(`${DB_PATH}/teams.json`, 'utf-8').then(JSON.parse)
 
 const URLS = {
   leaderboard: 'https://kingsleague.pro/estadisticas/clasificacion/'
@@ -26,23 +29,31 @@ async function getLeaderBoard () {
     redCards: { selector: '.fs-table-text_9', typeOf: 'number' }
   }
 
-  const cleanText = text => text
-    .replace(/\t|\n|\s:/g, '')
-    .replace(/.*:/g, ' ')
-    .trim()
+  const getTeamFrom = ({ name }) => TEAMS.find((team) => team.name === name)
+
+  const cleanText = text =>
+    text
+      .replace(/\t|\n|\s:/g, '')
+      .replace(/.*:/g, ' ')
+      .trim()
 
   const leaderBoardSelectorEntries = Object.entries(LEADERBOARD_SELECTORS)
 
   const leaderBoard = []
 
   $rows.each((index, element) => {
-    const leaderBoardEntries = leaderBoardSelectorEntries.map(([key, { selector, typeOf }]) => {
-      const rawValue = $(element).find(selector).text()
-      const cleanedValue = cleanText(rawValue)
-      const value = typeOf === 'number' ? +(cleanedValue) : cleanedValue
-      return [key, value]
-    })
-    leaderBoard.push(Object.fromEntries(leaderBoardEntries))
+    const leaderBoardEntries = leaderBoardSelectorEntries.map(
+      ([key, { selector, typeOf }]) => {
+        const rawValue = $(element).find(selector).text()
+        const cleanedValue = cleanText(rawValue)
+        const value = typeOf === 'number' ? +cleanedValue : cleanedValue
+        return [key, value]
+      }
+    )
+    const { team: teamName, ...leaderboardForTeam } = Object.fromEntries(leaderBoardEntries)
+    const team = getTeamFrom({ name: teamName })
+
+    leaderBoard.push({ ...leaderboardForTeam, team })
   })
   return leaderBoard
 }
@@ -50,7 +61,6 @@ async function getLeaderBoard () {
 const leaderBoard = await getLeaderBoard()
 
 // ** process.cwd -> Current working directory -> Desde donde se esta ejecutando el script **
-const filePath = path.join(process.cwd(), './db/leaderboard.json')
 
 // ** Escribimos dentro de nuestro archivo JSON el LeaderBoard **
-await writeFile(filePath, JSON.stringify(leaderBoard, null, 2), 'utf8')
+await writeFile(`${DB_PATH}/leaderboard.json`, JSON.stringify(leaderBoard, null, 2), 'utf8')
